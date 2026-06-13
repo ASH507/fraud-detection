@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UPI Statement Analyzer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #080b14;
+      --surface: #0f1420;
+      --surface2: #161d2e;
+      --border: rgba(255,255,255,0.07);
+      --border-bright: rgba(255,255,255,0.15);
+      --accent: #4f9cf9;
+      --accent2: #7b5cf6;
+      --accent3: #38d9a9;
+      --text: #e8eaf0;
+      --muted: #6b7899;
+      --danger: #f87171;
+      --success: #34d399;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Ambient background ── */
+    .bg-orbs {
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      overflow: hidden;
+    }
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.18;
+      animation: drift 12s ease-in-out infinite alternate;
+    }
+    .orb1 { width: 600px; height: 600px; background: #4f9cf9; top: -200px; left: -100px; animation-duration: 14s; }
+    .orb2 { width: 500px; height: 500px; background: #7b5cf6; bottom: -150px; right: -80px; animation-duration: 11s; animation-delay: -4s; }
+    .orb3 { width: 300px; height: 300px; background: #38d9a9; top: 40%; left: 50%; transform: translateX(-50%); animation-duration: 9s; animation-delay: -7s; }
+
+    @keyframes drift {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(40px, 30px) scale(1.08); }
+    }
+
+    /* ── Grid lines overlay ── */
+    .grid-overlay {
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 60px 60px;
+      mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 100%);
+    }
+
+    /* ── Main layout ── */
+    main {
+      position: relative; z-index: 1;
+      width: 100%; max-width: 580px;
+      padding: 80px 24px 60px;
+      display: flex; flex-direction: column; align-items: center; gap: 0;
+    }
+
+    /* ── Logo badge ── */
+    .logo-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(79,156,249,0.1);
+      border: 1px solid rgba(79,156,249,0.25);
+      border-radius: 100px;
+      padding: 6px 16px 6px 10px;
+      margin-bottom: 28px;
+      animation: fadeSlideDown 0.6s ease both;
+    }
+    .logo-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+      animation: pulse 2s ease infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.4)} }
+    .logo-badge span { font-family:'Syne',sans-serif; font-size:12px; font-weight:600; letter-spacing:0.08em; color:var(--accent); text-transform:uppercase; }
+
+    /* ── Headline ── */
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(32px, 6vw, 52px);
+      font-weight: 800;
+      line-height: 1.1;
+      text-align: center;
+      margin-bottom: 16px;
+      animation: fadeSlideDown 0.7s 0.1s ease both;
+    }
+    h1 .gradient-text {
+      background: linear-gradient(135deg, var(--accent), var(--accent2), var(--accent3));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      font-size: 16px; font-weight: 300; color: var(--muted);
+      text-align: center; max-width: 380px;
+      margin-bottom: 48px; line-height: 1.6;
+      animation: fadeSlideDown 0.7s 0.2s ease both;
+    }
+
+    /* ── Upload card ── */
+    .card {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 40px;
+      position: relative;
+      overflow: hidden;
+      animation: fadeSlideUp 0.8s 0.3s ease both;
+      transition: border-color 0.3s;
+    }
+    .card::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(79,156,249,0.04) 0%, rgba(123,92,246,0.04) 100%);
+      pointer-events: none;
+    }
+    .card:hover { border-color: var(--border-bright); }
+
+    /* ── Drop zone ── */
+    .dropzone {
+      border: 1.5px dashed rgba(79,156,249,0.3);
+      border-radius: 16px;
+      padding: 40px 24px;
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      cursor: pointer; position: relative;
+      background: rgba(79,156,249,0.03);
+      transition: all 0.25s ease;
+    }
+    .dropzone:hover, .dropzone.dragging {
+      border-color: var(--accent);
+      background: rgba(79,156,249,0.07);
+      transform: translateY(-2px);
+    }
+    .dropzone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+
+    /* ── Upload icon ── */
+    .upload-icon {
+      width: 64px; height: 64px; border-radius: 16px;
+      background: rgba(79,156,249,0.12);
+      border: 1px solid rgba(79,156,249,0.2);
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.3s ease;
+    }
+    .dropzone:hover .upload-icon {
+      background: rgba(79,156,249,0.2);
+      transform: translateY(-3px) scale(1.05);
+    }
+    .upload-icon svg { width: 28px; height: 28px; }
+
+    .dropzone-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 18px; font-weight: 700; color: var(--text);
+    }
+    .dropzone-sub {
+      font-size: 13px; color: var(--muted); text-align: center; line-height: 1.5;
+    }
+    .dropzone-sub span {
+      color: var(--accent); font-weight: 500; text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    /* ── File selected state ── */
+    .file-chosen {
+      display: none;
+      align-items: center; gap: 14px;
+      background: rgba(52,211,153,0.07);
+      border: 1px solid rgba(52,211,153,0.2);
+      border-radius: 12px; padding: 14px 18px; margin-top: 18px;
+    }
+    .file-chosen.show { display: flex; animation: fadeSlideUp 0.35s ease; }
+    .file-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: rgba(52,211,153,0.15);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .file-icon svg { width: 20px; height: 20px; }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name { font-size: 14px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-size { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .file-remove {
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); padding: 4px; border-radius: 6px;
+      display: flex; transition: color 0.2s;
+    }
+    .file-remove:hover { color: var(--danger); }
+
+    /* ── Divider ── */
+    .divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 24px 0; color: var(--muted); font-size: 12px;
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1;
+      height: 1px; background: var(--border);
+    }
+
+    /* ── Submit button ── */
+    .btn-submit {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none; border-radius: 14px;
+      font-family: 'Syne', sans-serif;
+      font-size: 16px; font-weight: 700;
+      color: #fff; cursor: pointer;
+      position: relative; overflow: hidden;
+      transition: all 0.25s ease;
+      letter-spacing: 0.02em;
+    }
+    .btn-submit::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+      opacity: 0; transition: opacity 0.25s;
+    }
+    .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(79,156,249,0.35); }
+    .btn-submit:hover::before { opacity: 1; }
+    .btn-submit:active { transform: translateY(0); }
+    .btn-submit:disabled {
+      opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none;
+    }
+
+    /* ── Shimmer effect on button ── */
+    .btn-submit::after {
+      content: '';
+      position: absolute; top: 0; left: -100%;
+      width: 60%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      animation: shimmer 3s ease-in-out infinite;
+    }
+    @keyframes shimmer { 0%{left:-60%} 100%{left:160%} }
+
+    /* ── Processing state ── */
+    .processing {
+      display: none; flex-direction: column; align-items: center;
+      gap: 20px; padding: 32px 0;
+    }
+    .processing.show { display: flex; animation: fadeSlideUp 0.4s ease; }
+    .spinner-ring {
+      width: 56px; height: 56px; position: relative;
+    }
+    .spinner-ring svg { width: 100%; height: 100%; animation: spinRing 1.4s linear infinite; }
+    @keyframes spinRing { to { transform: rotate(360deg); } }
+    .processing-text {
+      font-family: 'Syne', sans-serif;
+      font-size: 18px; font-weight: 700;
+    }
+    .processing-sub { font-size: 14px; color: var(--muted); }
+
+    /* ── Progress bar ── */
+    .progress-wrap {
+      width: 100%; height: 4px; background: rgba(255,255,255,0.07);
+      border-radius: 100px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent3));
+      border-radius: 100px;
+      width: 0%;
+      animation: progressFill 2.5s ease forwards;
+      background-size: 200%;
+      animation: progressFill 2.5s ease forwards, gradientSlide 1.5s linear infinite;
+    }
+    @keyframes progressFill { to { width: 85%; } }
+    @keyframes gradientSlide { 0%{background-position:0%} 100%{background-position:200%} }
+
+    /* ── Output section ── */
+    .output-section {
+      width: 100%;
+      margin-top: 32px;
+      animation: fadeSlideUp 0.6s ease both;
+    }
+    .output-header {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+    }
+    .success-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(52,211,153,0.1);
+      border: 1px solid rgba(52,211,153,0.25);
+      border-radius: 100px; padding: 5px 12px;
+      font-size: 12px; font-weight: 600; color: var(--success);
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .success-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--success); animation: pulse 1.5s ease infinite;
+    }
+
+    .download-grid {
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .download-item {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px 18px;
+      text-decoration: none; color: var(--text);
+      transition: all 0.25s ease;
+      position: relative; overflow: hidden;
+    }
+    .download-item::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px; background: var(--accent);
+      transform: scaleY(0); transition: transform 0.25s ease;
+      transform-origin: bottom;
+    }
+    .download-item:hover {
+      border-color: var(--border-bright);
+      transform: translateX(4px);
+    }
+    .download-item:hover::before { transform: scaleY(1); }
+    .download-item:nth-child(2)::before { background: var(--accent2); }
+    .download-item:nth-child(3)::before { background: var(--accent3); }
+
+    .dl-icon {
+      width: 42px; height: 42px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .dl-icon.csv  { background: rgba(79,156,249,0.1); }
+    .dl-icon.pdf  { background: rgba(123,92,246,0.1); }
+    .dl-icon.loc  { background: rgba(56,217,169,0.1); }
+    .dl-icon svg { width: 20px; height: 20px; }
+    .dl-info { flex: 1; }
+    .dl-label { font-size: 14px; font-weight: 500; }
+    .dl-desc   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .dl-arrow { color: var(--muted); transition: transform 0.2s; }
+    .download-item:hover .dl-arrow { transform: translateX(3px); color: var(--text); }
+
+    /* ── Feature pills ── */
+    .features {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+      margin-top: 40px;
+      animation: fadeSlideDown 0.8s 0.5s ease both;
+    }
+    .feature-pill {
+      display: flex; align-items: center; gap: 7px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 100px; padding: 7px 14px;
+      font-size: 12px; color: var(--muted); font-weight: 400;
+      transition: all 0.2s;
+    }
+    .feature-pill:hover { background: rgba(255,255,255,0.07); border-color: var(--border-bright); color: var(--text); }
+    .pill-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .pill-dot.blue  { background: var(--accent); }
+    .pill-dot.purple { background: var(--accent2); }
+    .pill-dot.green { background: var(--accent3); }
+
+    /* ── Animations ── */
+    @keyframes fadeSlideDown {
+      from { opacity: 0; transform: translateY(-18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Floating particles ── */
+    .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+    .particle {
+      position: absolute; border-radius: 50%;
+      background: rgba(255,255,255,0.4);
+      animation: float linear infinite;
+    }
+    @keyframes float {
+      0%   { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+      10%  { opacity: 1; }
+      90%  { opacity: 0.5; }
+      100% { transform: translateY(-10vh) rotate(720deg); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg-orbs">
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+</div>
+<div class="grid-overlay"></div>
+<div class="particles" id="particles"></div>
+
+<main>
+  <!-- Badge -->
+  <div class="logo-badge">
+    <div class="logo-dot"></div>
+    <span>UPI Analyzer v2.0</span>
+  </div>
+
+  <!-- Headline -->
+  <h1>Analyze Your<br><span class="gradient-text">UPI Statements</span></h1>
+  <p class="subtitle">Upload your UPI PDF statement and get instant insights — parsed data, summary, and location mapping.</p>
+
+  <!-- Card -->
+  <div class="card">
+    <form id="uploadForm" method="post" enctype="multipart/form-data">
+
+      <!-- Default view -->
+      <div id="formContent">
+        <!-- Drop zone -->
+        <div class="dropzone" id="dropzone">
+          <input type="file" name="file" accept=".pdf" id="fileInput" required>
+          <div class="upload-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#4f9cf9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <div class="dropzone-title">Drop your PDF here</div>
+          <div class="dropzone-sub"><span>Browse file</span> or drag &amp; drop<br>PDF statements only · Max 20MB</div>
+        </div>
+
+        <!-- File chosen indicator -->
+        <div class="file-chosen" id="fileChosen">
+          <div class="file-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+          </div>
+          <div class="file-info">
+            <div class="file-name" id="fileName">statement.pdf</div>
+            <div class="file-size" id="fileSize">2.4 MB</div>
+          </div>
+          <button type="button" class="file-remove" id="removeFile" title="Remove file">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="divider">or</div>
+
+        <button type="submit" class="btn-submit" id="submitBtn" disabled>
+          Analyze Statement →
+        </button>
+      </div>
+
+      <!-- Processing state -->
+      <div class="processing" id="processingState">
+        <div class="spinner-ring">
+          <svg viewBox="0 0 56 56">
+            <circle cx="28" cy="28" r="22" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="4"/>
+            <circle cx="28" cy="28" r="22" fill="none" stroke="url(#spinGrad)" stroke-width="4"
+              stroke-linecap="round" stroke-dasharray="100 38" stroke-dashoffset="0"/>
+            <defs>
+              <linearGradient id="spinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#4f9cf9"/>
+                <stop offset="100%" stop-color="#7b5cf6"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="processing-text">Analyzing transactions…</div>
+        <div class="processing-sub">Parsing PDF, classifying recipients & mapping locations</div>
+        <div class="progress-wrap" style="width:100%;margin-top:8px">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+
+    </form>
+
+    <!-- Output section -->
+    {% if csv_path %}
+    <div class="output-section">
+      <div class="output-header">
+        <div class="success-badge"><div class="success-dot"></div>Analysis Complete</div>
+      </div>
+      <div class="download-grid">
+        <a href="/download/{{ csv_path }}" class="download-item">
+          <div class="dl-icon csv">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#4f9cf9" stroke-width="1.8" stroke-linecap="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+            </svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-label">Parsed CSV</div>
+            <div class="dl-desc">All transactions in structured format</div>
+          </div>
+          <div class="dl-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>
+        </a>
+        <a href="/download/{{ summary_path }}" class="download-item">
+          <div class="dl-icon pdf">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#7b5cf6" stroke-width="1.8" stroke-linecap="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+            </svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-label">Summary PDF</div>
+            <div class="dl-desc">Spending breakdown & key insights</div>
+          </div>
+          <div class="dl-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>
+        </a>
+        <a href="/download/{{ locations_path }}" class="download-item">
+          <div class="dl-icon loc">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#38d9a9" stroke-width="1.8" stroke-linecap="round">
+              <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+            </svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-label">Location URLs</div>
+            <div class="dl-desc">Merchant locations on Google Maps</div>
+          </div>
+          <div class="dl-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>
+        </a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Feature pills -->
+  <div class="features">
+    <div class="feature-pill"><div class="pill-dot blue"></div>Smart PDF Parsing</div>
+    <div class="feature-pill"><div class="pill-dot purple"></div>AI Classification</div>
+    <div class="feature-pill"><div class="pill-dot green"></div>Location Mapping</div>
+    <div class="feature-pill"><div class="pill-dot blue"></div>Instant Download</div>
+  </div>
+</main>
+
+<script>
+  /* ── Floating particles ── */
+  const container = document.getElementById('particles');
+  for (let i = 0; i < 18; i++) {
+    const p = document.createElement('div');
+    p.classList.add('particle');
+    const size = Math.random() * 2.5 + 0.8;
+    p.style.cssText = `
+      width:${size}px; height:${size}px;
+      left:${Math.random()*100}%;
+      animation-duration:${Math.random()*20+15}s;
+      animation-delay:-${Math.random()*20}s;
+      opacity:${Math.random()*0.4+0.1};
+    `;
+    container.appendChild(p);
+  }
+
+  /* ── File input handling ── */
+  const fileInput  = document.getElementById('fileInput');
+  const fileChosen = document.getElementById('fileChosen');
+  const fileName   = document.getElementById('fileName');
+  const fileSize   = document.getElementById('fileSize');
+  const submitBtn  = document.getElementById('submitBtn');
+  const removeBtn  = document.getElementById('removeFile');
+  const dropzone   = document.getElementById('dropzone');
+
+  function formatBytes(b) {
+    if (b < 1024)       return b + ' B';
+    if (b < 1048576)    return (b/1024).toFixed(1) + ' KB';
+    return (b/1048576).toFixed(1) + ' MB';
+  }
+
+  function showFile(file) {
+    fileName.textContent = file.name;
+    fileSize.textContent = formatBytes(file.size);
+    fileChosen.classList.add('show');
+    submitBtn.disabled = false;
+  }
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) showFile(fileInput.files[0]);
+  });
+
+  removeBtn.addEventListener('click', () => {
+    fileInput.value = '';
+    fileChosen.classList.remove('show');
+    submitBtn.disabled = true;
+  });
+
+  /* ── Drag & drop ── */
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragging'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragging'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault(); dropzone.classList.remove('dragging');
+    const f = e.dataTransfer.files[0];
+    if (f && f.type === 'application/pdf') {
+      const dt = new DataTransfer();
+      dt.items.add(f);
+      fileInput.files = dt.files;
+      showFile(f);
+    }
+  });
+
+  /* ── Form submit → processing state ── */
+  document.getElementById('uploadForm').addEventListener('submit', () => {
+    document.getElementById('formContent').style.display = 'none';
+    document.getElementById('processingState').classList.add('show');
+  });
+</script>
+</body>
+</html>

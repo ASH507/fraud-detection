@@ -1,0 +1,6 @@
+Flask
+fpdf
+pandas
+pdfplumber
+googlesearch-python
+
